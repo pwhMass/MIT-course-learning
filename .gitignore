@@ -1,2 +1,9 @@
 sim*
 **/buildDir/**
+**/bscdir/**
+*.riscv
+*.o
+*.vmh
+*.dump
+**/bluesim/**
+**/logs/**
