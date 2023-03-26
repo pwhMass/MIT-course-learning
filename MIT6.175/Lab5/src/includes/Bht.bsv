@@ -2,6 +2,7 @@ import Types::*;
 import ProcTypes::*;
 import RegFile::*;
 import Vector::*;
+import Ehr::*;
 
 interface DirectionPred#(numeric type bhtIndex);
     method Addr ppcDP(Addr pc, Addr targetPC);
@@ -50,14 +51,19 @@ module mkBHT(DirectionPred#(bhtIndex)) provisos( Add#(bhtIndex,a__,32), NumAlias
 
 
     //compute the ppc according to the bht array
-    method Addr ppcDP(Addr pc, Addr targetPC);
+    method Addr predPc(Addr pc, Addr targetPC);
         let direction = extractDir(getBhtEntry(pc));
         return computeTarget(pc, targetPC, direction);
     endmethod
 
     method Action update(Addr pc, Bool taken);
-        let index = getBhtIndex(pc);
-        let dpBits = getBhtEntry(pc);
-        bhtArr[index] <=newDpBits(dpBits, taken);
+
+        //removes the last 2 bits (always 0) and adjusts the length to the BHT current entry length
+        Bit#(indexSize) bhtEntry = truncate(pc >> 2);
+        //retrieves the predictor from the vector
+        BhtDirection predictor = directions[bhtEntry];
+
+        directions[bhtEntry] <= updatePredictor(predictor, taken);
     endmethod
+
 endmodule
