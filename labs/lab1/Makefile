@@ -20,7 +20,10 @@ csa: compile
 csasimple: compile
 	bsc -sim -e mkTbCSASimple -bdir buildDir -info-dir buildDir -simdir buildDir -o simCsaSimple buildDir/*.ba
 
-all: mux muxsimple rca rcasimple csa csasimple
+bs: compile
+	bsc -sim -e mkTbBS -bdir buildDir -info-dir buildDir -simdir buildDir -o simBs buildDir/*.ba
+
+all: mux muxsimple rca rcasimple csa csasimple bs
 
 clean:
 	rm -rf buildDir sim*

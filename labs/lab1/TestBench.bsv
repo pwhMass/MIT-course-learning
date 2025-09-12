@@ -2,6 +2,7 @@ import Vector::*;
 import Randomizable::*;
 import Adders::*;
 import Multiplexer::*;
+import BarrelShifter::*;
 
 // Mux testbenches
 
@@ -204,3 +205,29 @@ module mkTbCSA();
     endrule
 endmodule
 
+(* synthesize *)
+module mkTbBS();
+    Reg#(Bit#(32)) cycle <- mkReg(0);
+    Randomize#(Bit#(32)) randomVal1 <- mkGenericRandomizer;
+    Randomize#(Bit#(5)) randomVal2 <- mkGenericRandomizer;
+
+    rule test;
+        if(cycle == 0) begin
+            randomVal1.cntrl.init;
+            randomVal2.cntrl.init;
+        end else if(cycle == 128) begin
+            $display("PASSED");
+            $finish;
+        end else begin
+            let val1 <- randomVal1.next;
+            let val2 <- randomVal2.next;
+            Bit#(32) test = barrelShifterRight(val1,val2); 
+            Bit#(32) realAns = val1 >> val2; 
+            if(test != realAns) begin
+                $display("FAILED %b >> %b gave %b instead of %b", val1, val2, test, realAns);
+                $finish;
+            end
+        end
+        cycle <= cycle + 1;
+    endrule
+endmodule
