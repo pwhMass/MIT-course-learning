@@ -4,4 +4,5 @@ services:
     image: kazutoiris/connectal:latest # 镜像名称
     volumes:
       - .:/data # 映射 /root 目录
-    network_mode: none # 不连接网络
+    working_dir: /data # 设置工作目录为 /data
+    command: tail -f /dev/null  # 添加这行保持容器运行
