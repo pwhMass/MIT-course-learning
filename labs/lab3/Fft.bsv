@@ -66,8 +66,45 @@ module mkFftFolded(Fft);
     Fifo#(2,Vector#(FftPoints, ComplexData)) outFifo <- mkCFFifo;
     Vector#(16, Bfly4) bfly <- replicateM(mkBfly4);
 
-    rule doFft;
-        //TODO: Implement the rest of this module
+    Reg#(StageIdx) stage_g <- mkReg(0);
+    Reg#(Vector#(FftPoints, ComplexData)) data_g <- mkRegU;
+
+    function Vector#(FftPoints, ComplexData) stage_f(StageIdx stage, Vector#(FftPoints, ComplexData) stage_in);
+        Vector#(FftPoints, ComplexData) stage_temp, stage_out;
+        for (FftIdx i = 0; i < fromInteger(valueOf(BflysPerStage)); i = i + 1)  begin
+            FftIdx idx = i * 4;
+            Vector#(4, ComplexData) x;
+            Vector#(4, ComplexData) twid;
+            for (FftIdx j = 0; j < 4; j = j + 1 ) begin
+                x[j] = stage_in[idx+j];
+                twid[j] = getTwiddle(stage, idx+j);
+            end
+            let y = bfly[i].bfly4(twid, x);
+
+            for(FftIdx j = 0; j < 4; j = j + 1 ) begin
+                stage_temp[idx+j] = y[j];
+            end
+        end
+
+        stage_out = permute(stage_temp);
+
+        return stage_out;
+    endfunction
+
+    rule doFft_start if(stage_g == 0);
+        inFifo.deq;
+        stage_g <= 1;
+        data_g <= stage_f(stage_g,inFifo.first);
+    endrule
+
+    rule doFft if(stage_g > 0 && stage_g < fromInteger(valueOf(NumStages)));
+        stage_g <= stage_g + 1;
+        data_g <= stage_f(stage_g, data_g);
+    endrule
+
+    rule outFft if(stage_g == fromInteger(valueOf(NumStages)));
+        outFifo.enq(data_g);
+        stage_g <= 0;
     endrule
 
     method Action enq(Vector#(FftPoints, ComplexData) in) if( inFifo.notFull );
@@ -102,12 +139,44 @@ endmodule
 
 (* synthesize *)
 module mkFftElasticPipeline(Fft);
-    Fifo#(2,Vector#(FftPoints, ComplexData)) inFifo <- mkCFFifo;
-    Fifo#(2,Vector#(FftPoints, ComplexData)) outFifo <- mkCFFifo;
+    Vector#(4, Fifo#(2,Vector#(FftPoints, ComplexData))) fifos <- replicateM(mkCFFifo);
+    Fifo#(2,Vector#(FftPoints, ComplexData)) inFifo = fifos[0];
+    Fifo#(2,Vector#(FftPoints, ComplexData)) outFifo = fifos[3];
     Vector#(3, Vector#(16, Bfly4)) bfly <- replicateM(replicateM(mkBfly4));
 
+
+    function Vector#(FftPoints, ComplexData) stage_f(StageIdx stage, Vector#(FftPoints, ComplexData) stage_in);
+        Vector#(FftPoints, ComplexData) stage_temp, stage_out;
+        for (FftIdx i = 0; i < fromInteger(valueOf(BflysPerStage)); i = i + 1)  begin
+            FftIdx idx = i * 4;
+            Vector#(4, ComplexData) x;
+            Vector#(4, ComplexData) twid;
+            for (FftIdx j = 0; j < 4; j = j + 1 ) begin
+                x[j] = stage_in[idx+j];
+                twid[j] = getTwiddle(stage, idx+j);
+            end
+            let y = bfly[stage][i].bfly4(twid, x);
+
+            for(FftIdx j = 0; j < 4; j = j + 1 ) begin
+                stage_temp[idx+j] = y[j];
+            end
+        end
+
+        stage_out = permute(stage_temp);
+
+        return stage_out;
+    endfunction
     //TODO: Implement the rest of this module
     // You should use more than one rule
+
+    for (StageIdx stage = 0; stage < 3; stage = stage + 1) begin
+        rule doFft_stage if( fifos[stage].notEmpty && fifos[stage+1].notFull );
+            fifos[stage].deq;
+            Vector#(FftPoints, ComplexData) stage_data = fifos[stage].first;
+            Vector#(FftPoints, ComplexData) stage_out = stage_f(stage, stage_data);
+            fifos[stage+1].enq(stage_out);
+        endrule
+    end
 
     method Action enq(Vector#(FftPoints, ComplexData) in);
         inFifo.enq(in);
