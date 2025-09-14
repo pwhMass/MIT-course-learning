@@ -1,0 +1,9 @@
+# Build directories
+buildDir/
+**/buildDir/
+
+# Simulation files
+sim*
+
+# Temporary files
+tmp/
