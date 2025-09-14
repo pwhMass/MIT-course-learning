@@ -127,6 +127,16 @@ module mkFoldedMultiplier_wrong( Multiplier#(n) );
     endmethod
 endmodule
 
+function Bit#(n) arthmeticShiftRightOne( Bit#(n) x)
+    provisos( Add#(1, a__, n) );
+    return {x[valueOf(n)-1], x[valueOf(n)-1:1]};
+endfunction
+
+function Bit#(n) arthmeticShiftRight( Bit#(n) x, Integer power );
+    Int#(n) t = unpack(x);
+    t = t >> power;
+    return pack(t);
+endfunction
 
 
 // Booth Multiplier
@@ -136,60 +146,137 @@ module mkBoothMultiplier( Multiplier#(n) );
     Reg#(Bit#(TAdd#(TAdd#(n,n),1))) p <- mkRegU;
     Reg#(Bit#(TAdd#(TLog#(n),1))) i <- mkReg( fromInteger(valueOf(n)+1) );
 
-    // rule mul_step( /* guard goes here */ );
-    //     // TODO: Implement this in Exercise 6
-    // endrule
+    rule mul_step( i < fromInteger(valueOf(n)) );
+        let pr = p[1:0];
+        Bit#(TAdd#(TAdd#(n,n),1)) pe = case(pr) matches
+            2'b01: arthmeticShiftRightOne( p + m_pos );
+            2'b10: arthmeticShiftRightOne( p + m_neg );
+            default: arthmeticShiftRightOne( p );
+        endcase;
+
+        p <= pe;
+        i <= i + 1;
+    endrule
 
     method Bool start_ready();
-        // TODO: Implement this in Exercise 6
-        return False;
+        return i == fromInteger(valueOf(TAdd#(n,1)));
     endmethod
 
     method Action start( Bit#(n) m, Bit#(n) r );
         // TODO: Implement this in Exercise 6
+        m_pos <= {m,0};
+        m_neg <= {-m,0};
+        p <= {0,r,1'b0};
+        i <= 0;
+
     endmethod
 
     method Bool result_ready();
-        // TODO: Implement this in Exercise 6
-        return False;
+        // TODO: Implement this in Exercise 4
+        return i == fromInteger(valueOf(n));
     endmethod
 
     method ActionValue#(Bit#(TAdd#(n,n))) result();
-        // TODO: Implement this in Exercise 6
-        return 0;
+        i <= i + 1;
+        //TODO
+        return p[valueOf(TAdd#(n,n)):1];
     endmethod
 endmodule
 
 
+// Booth Multiplier
+module mkBoothMultiplier_2( Multiplier#(n) );
+    Reg#(Bit#(TAdd#(TAdd#(n,n),1))) m_neg <- mkRegU;
+    Reg#(Bit#(TAdd#(TAdd#(n,n),1))) m_pos <- mkRegU;
+    Reg#(Bit#(TAdd#(TAdd#(n,n),1))) p <- mkRegU;
+    Reg#(Bit#(TAdd#(TLog#(n),1))) i <- mkReg( fromInteger(valueOf(n)+1) );
+
+    rule mul_step( i < fromInteger(valueOf(n)) );
+        let pr = p[1:0];
+        Bit#(TAdd#(TAdd#(n,n),2)) pe = case(pr) matches
+            2'b01: arthmeticShiftRightOne( signExtend(p) + signExtend(m_pos) );
+            2'b10: arthmeticShiftRightOne( signExtend(p) + signExtend(m_neg) );
+            default: arthmeticShiftRightOne( signExtend(p) );
+        endcase;
+        p <= truncate(pe);
+        i <= i + 1;
+    endrule
+
+    method Bool start_ready();
+        return i == fromInteger(valueOf(TAdd#(n,1)));
+    endmethod
+
+    method Action start( Bit#(n) m, Bit#(n) r );
+        // TODO: Implement this in Exercise 6
+        m_pos <= {m,0};
+        m_neg <= {-m,0};
+
+        p <= {0,r,1'b0};
+        i <= 0;
+
+    endmethod
+
+    method Bool result_ready();
+        // TODO: Implement this in Exercise 4
+        return i == fromInteger(valueOf(n));
+    endmethod
+
+    method ActionValue#(Bit#(TAdd#(n,n))) result();
+        i <= i + 1;
+        // QUESTION: 你**为什么不报错，左右明显不一样宽
+        // Bit#(TAdd#(n,n)) ppp = p[(valueOf(TAdd#(n,n))-1):1];
+        // $display("result: m=%d", valueOf(TAdd#(n,n)));
+        return p[valueOf(TAdd#(n,n)):1];
+    endmethod
+endmodule
 
 // Radix-4 Booth Multiplier
-module mkBoothMultiplierRadix4( Multiplier#(n) );
+module mkBoothMultiplierRadix4( Multiplier#(n) )
+    provisos( Div#(n, 2, half_n), Add#(1, a__, half_n) );
     Reg#(Bit#(TAdd#(TAdd#(n,n),2))) m_neg <- mkRegU;
     Reg#(Bit#(TAdd#(TAdd#(n,n),2))) m_pos <- mkRegU;
     Reg#(Bit#(TAdd#(TAdd#(n,n),2))) p <- mkRegU;
     Reg#(Bit#(TAdd#(TLog#(n),1))) i <- mkReg( fromInteger(valueOf(n)/2+1) );
 
-    // rule mul_step( /* guard goes here */ );
-    //     // TODO: Implement this in Exercise 8
-    // endrule
+    rule mul_step( i < fromInteger(valueOf(n)/2) );
+        let pr = p[2:0];
+
+        Bit#(TAdd#(TAdd#(n,n),2)) pe = case(pr) matches
+            3'b001: return p + m_pos ;
+            3'b010: return p + (m_pos << 1) + m_neg ;
+            3'b011: return p + (m_pos << 1) ;
+            3'b100: return p + (m_neg << 1) ;
+            3'b101: return p + (m_neg << 1) + m_pos ;
+            3'b110: return p + m_neg ;
+            default: return p ;
+        endcase;
+
+    p <= pack((Int#(TAdd#(TAdd#(n,n),2))'(unpack(pe))) >> 2);
+    i <= i + 1;
+    endrule
 
     method Bool start_ready();
-        // TODO: Implement this in Exercise 8
-        return False;
+        return i == fromInteger(valueOf(n)/2+1);
     endmethod
 
     method Action start( Bit#(n) m, Bit#(n) r );
         // TODO: Implement this in Exercise 8
+        m_pos <= {msb(m),m,0};
+        m_neg <= {msb(-m),-m,0};
+
+        p <= {0,r,1'b0};
+        i <= 0;
     endmethod
 
     method Bool result_ready();
-        // TODO: Implement this in Exercise 8
-        return False;
+        return i == fromInteger(valueOf(n)/2);
     endmethod
 
     method ActionValue#(Bit#(TAdd#(n,n))) result();
         // TODO: Implement this in Exercise 8
-        return 0;
+        i <= i + 1;
+        $display("result: p=%b", p);
+        return p[valueOf(TAdd#(n,n)):1];
     endmethod
 endmodule
 
