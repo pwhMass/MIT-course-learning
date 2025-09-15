@@ -61,7 +61,7 @@ module mkFftCombinational(Fft);
 endmodule
 
 (* synthesize *)
-module mkFftFolded(Fft);
+module mkFftFolded_2(Fft);
     Fifo#(2,Vector#(FftPoints, ComplexData)) inFifo <- mkCFFifo;
     Fifo#(2,Vector#(FftPoints, ComplexData)) outFifo <- mkCFFifo;
     Vector#(16, Bfly4) bfly <- replicateM(mkBfly4);
@@ -106,6 +106,82 @@ module mkFftFolded(Fft);
         outFifo.enq(data_g);
         stage_g <= 0;
     endrule
+
+    method Action enq(Vector#(FftPoints, ComplexData) in) if( inFifo.notFull );
+        inFifo.enq(in);
+    endmethod
+  
+    method ActionValue#(Vector#(FftPoints, ComplexData)) deq if( outFifo.notEmpty );
+        outFifo.deq;
+        return outFifo.first;
+    endmethod
+endmodule
+
+
+(* synthesize *)
+module mkFftFolded(Fft);
+    Fifo#(2,Vector#(FftPoints, ComplexData)) inFifo <- mkCFFifo;
+    Fifo#(2,Vector#(FftPoints, ComplexData)) outFifo <- mkCFFifo;
+    Vector#(16, Bfly4) bfly <- replicateM(mkBfly4);
+
+    Reg#(StageIdx) stage_g <- mkReg(0);
+    Reg#(Vector#(FftPoints, ComplexData)) data_g <- mkRegU;
+
+    function Vector#(FftPoints, ComplexData) stage_f(StageIdx stage, Vector#(FftPoints, ComplexData) stage_in);
+        Vector#(FftPoints, ComplexData) stage_temp, stage_out;
+        for (FftIdx i = 0; i < fromInteger(valueOf(BflysPerStage)); i = i + 1)  begin
+            FftIdx idx = i * 4;
+            Vector#(4, ComplexData) x;
+            Vector#(4, ComplexData) twid;
+            for (FftIdx j = 0; j < 4; j = j + 1 ) begin
+                x[j] = stage_in[idx+j];
+                twid[j] = getTwiddle(stage, idx+j);
+            end
+            let y = bfly[i].bfly4(twid, x);
+
+            for(FftIdx j = 0; j < 4; j = j + 1 ) begin
+                stage_temp[idx+j] = y[j];
+            end
+        end
+
+        stage_out = permute(stage_temp);
+
+        return stage_out;
+    endfunction
+
+
+    rule doFft;
+        let stage = stage_g;
+        Vector#(FftPoints, ComplexData) data = ?;
+        if(stage_g == 0 && inFifo.notEmpty) begin
+            inFifo.deq;
+            stage_g <= 1;
+            data = inFifo.first;
+        end
+        else if(stage_g > 0 && stage_g < fromInteger(valueOf(NumStages))) begin
+            stage_g <= stage_g + 1;
+            data = data_g;
+        end
+
+        else if(stage_g == fromInteger(valueOf(NumStages))) begin
+            outFifo.enq(data_g);
+            if (inFifo.notEmpty) begin
+                inFifo.deq;
+                stage_g <= 1;
+                data = inFifo.first;
+            end
+            else begin
+                stage_g <= 0;
+            end
+        end
+
+        if(stage_g < fromInteger(valueOf(NumStages)) || (stage_g == fromInteger(valueOf(NumStages)) && inFifo.notEmpty)) begin
+            let stage = stage_g == 3 ? 0 : stage_g;
+            data_g <= stage_f(stage, data);
+        end
+    endrule
+
+
 
     method Action enq(Vector#(FftPoints, ComplexData) in) if( inFifo.notFull );
         inFifo.enq(in);
