@@ -83,30 +83,59 @@ endmodule
 module mkMyPipelineFifo( Fifo#(n, t) ) provisos (Bits#(t,tSz));
     // n is size of fifo
     // t is data type of fifo
+    Vector#(n, Reg#(t))     data     <- replicateM(mkRegU());
+    Ehr#(2,Bit#(TLog#(n)))    enqP     <- mkEhr(0);
+    Ehr#(3,Bit#(TLog#(n)))    deqP     <- mkEhr(0);
+    Ehr#(3,Bool)              empty    <- mkEhr(True);
+    Ehr#(3,Bool)              full     <- mkEhr(False);
+
+    // useful value
+    Bit#(TLog#(n))          max_index = fromInteger(valueOf(n)-1);
+
+
+    function Bit#(TLog#(n)) nextPtr( Bit#(TLog#(n)) p );
+        return (p == max_index) ? 0 : p + 1;
+    endfunction
 
     method Bool notFull;
-        return True;
-    endmethod
-
-    method Action enq(t x);
-        noAction;
+        return !full[1];
     endmethod
 
     method Bool notEmpty;
-        return False;
+        return !empty[0];
     endmethod
 
-    method Action deq;
-        noAction;
+    method Action enq(t x) if (!full[1]);
+        data[enqP[0]] <= x;
+        let next_enqP = nextPtr(enqP[0]);
+        enqP[0] <= next_enqP;
+        empty[1] <= False;
+        if (next_enqP == deqP[1]) begin
+            full[1] <= True;
+        end
+
     endmethod
 
-    method t first;
-        return ?;
+    method Action deq() if (!empty[0]);   
+        let next_deqP = nextPtr(deqP[0]);
+        deqP[0] <= next_deqP;
+        full[0] <= False;
+        if (next_deqP == enqP[0]) begin
+            empty[0] <= True;
+        end
+    endmethod
+
+    method t first if (!empty[0]);
+        return data[deqP[0]];
     endmethod
 
     method Action clear;
-        noAction;
+        enqP[1] <= 0;
+        deqP[2] <= 0;
+        empty[2] <= True;
+        full[2] <= False;
     endmethod
+
 endmodule
 
 /////////////////////////////
@@ -118,28 +147,57 @@ module mkMyBypassFifo( Fifo#(n, t) ) provisos (Bits#(t,tSz));
     // n is size of fifo
     // t is data type of fifo
 
-    method Bool notFull;
-        return True;
-    endmethod
+    Vector#(n, Reg#(t))     data     <- replicateM(mkRegU());
+    Ehr#(3,Bit#(TLog#(n)))    enqP     <- mkEhr(0);
+    Ehr#(2,Bit#(TLog#(n)))    deqP     <- mkEhr(0);
+    Ehr#(3,Bool)              empty    <- mkEhr(True);
+    Ehr#(3,Bool)              full     <- mkEhr(False);
 
-    method Action enq(t x);
-        noAction;
+    // useful value
+    Bit#(TLog#(n))          max_index = fromInteger(valueOf(n)-1);
+
+
+    function Bit#(TLog#(n)) nextPtr( Bit#(TLog#(n)) p );
+        return (p == max_index) ? 0 : p + 1;
+    endfunction
+
+    method Bool notFull;
+        return !full[0];
     endmethod
 
     method Bool notEmpty;
-        return False;
+        return !empty[1];
     endmethod
 
-    method Action deq;
-        noAction;
+    method Action enq(t x) if (!full[0]);
+        data[enqP[0]] <= x;
+        let next_enqP = nextPtr(enqP[0]);
+        enqP[0] <= next_enqP;
+        empty[0] <= False;
+        if (next_enqP == deqP[0]) begin
+            full[0] <= True;
+        end
+
     endmethod
 
-    method t first;
-        return ?;
+    method Action deq() if (!empty[1]);   
+        let next_deqP = nextPtr(deqP[0]);
+        deqP[0] <= next_deqP;
+        full[1] <= False;
+        if (next_deqP == enqP[1]) begin
+            empty[1] <= True;
+        end
+    endmethod
+
+    method t first if (!empty[1]);
+        return data[deqP[0]];
     endmethod
 
     method Action clear;
-        noAction;
+        enqP[2] <= 0;
+        deqP[1] <= 0;
+        empty[2] <= True;
+        full[2] <= False;
     endmethod
 endmodule
 
@@ -153,28 +211,87 @@ module mkMyCFFifo( Fifo#(n, t) ) provisos (Bits#(t,tSz));
     // n is size of fifo
     // t is data type of fifo
 
+
+    Bit#(TLog#(n))          max_index = fromInteger(valueOf(n)-1);
+    function Bit#(TLog#(n)) nextPtr( Bit#(TLog#(n)) p );
+        return (p == max_index) ? 0 : p + 1;
+    endfunction
+
+    Vector#(n, Reg#(t))     data     <- replicateM(mkRegU());
+    Ehr#(2,Bit#(TLog#(n)))    enqP     <- mkEhr(0);
+    Ehr#(2,Bit#(TLog#(n)))    deqP     <- mkEhr(0);
+    Ehr#(2,Bool)              empty    <- mkEhr(True);
+    Ehr#(2,Bool)              full     <- mkEhr(False);
+    // Ehr#(2,Maybe#(Bool))             call_deq <- mkEhr(tagged Invalid);
+    // Ehr#(2,Maybe#(t))                call_enq <- mkEhr(tagged Invalid);
+    RWire#(void)             call_deq <- mkRWire;
+    RWire#(t)                 call_enq <- mkRWire;
+
+
+    rule post_canonicalize;
+        let c_deq = call_deq.wget();
+        let c_enq = call_enq.wget();
+
+        Bool _empty = empty[0];
+        Bool _full = full[0];
+        
+        if (isValid(c_deq) && isValid(c_enq)) begin
+            // both deq and enq
+            data[enqP[0]] <= fromMaybe(?,c_enq);
+            let next_deqP = nextPtr(deqP[0]);
+            deqP[0] <= next_deqP;
+            let next_enqP = nextPtr(enqP[0]);
+            enqP[0] <= next_enqP;
+            // empty and full do not change
+        end else if (isValid(c_deq)) begin
+            // only deq
+            let next_deqP = nextPtr(deqP[0]);
+            deqP[0] <= next_deqP;
+            _full = False;
+            if (next_deqP == enqP[0]) begin
+                _empty = True;
+            end
+        end else if (isValid(c_enq)) begin
+            // only enq
+            data[enqP[0]] <= fromMaybe(?,c_enq);
+            let next_enqP = nextPtr(enqP[0]);
+            enqP[0] <= next_enqP;
+            _empty = False;
+            if (next_enqP == deqP[0]) begin
+                _full = True;
+            end
+        end
+
+
+        empty[0] <= _empty;
+        full[0] <= _full;
+    endrule
+
     method Bool notFull;
-        return True;
+        return !full[0];
     endmethod
 
-    method Action enq(t x);
-        noAction;
+    method Action enq(t x) if (!full[0]);
+        call_enq.wset(x);
     endmethod
 
     method Bool notEmpty;
-        return False;
+        return !empty[0];
     endmethod
 
-    method Action deq;
-        noAction;
+    method Action deq if (!empty[0]);
+        call_deq.wset(?);
     endmethod
 
-    method t first;
-        return ?;
+    method t first if (!empty[0]);
+        return data[deqP[0]];
     endmethod
 
     method Action clear;
-        noAction;
+        enqP[1] <= 0;
+        deqP[1] <= 0;
+        empty[1] <= True;
+        full[1] <= False;
     endmethod
 endmodule
 
