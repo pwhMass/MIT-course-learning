@@ -61,7 +61,7 @@ module mkTestCFFifo(Fifo#(n,t)) provisos(Bits#(t,tSz));
     endmethod
 
     method Action deq if(_not_empty[1]);
-        _deq[0] <= tagged Valid;
+        _deq[0] <= Valid(?);
     endmethod
 
     method t first if(_not_empty[1]);

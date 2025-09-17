@@ -28,6 +28,50 @@ module mkMyConflictFifo( Fifo#(n, t) ) provisos (Bits#(t,tSz));
     // useful value
     Bit#(TLog#(n))          max_index = fromInteger(valueOf(n)-1);
 
+
+    function Bit#(TLog#(n)) nextPtr( Bit#(TLog#(n)) p );
+        return (p == max_index) ? 0 : p + 1;
+    endfunction
+
+    method Bool notFull;
+        return !full;
+    endmethod
+
+    method Bool notEmpty;
+        return !empty;
+    endmethod
+
+    method Action enq(t x) if (!full);
+        data[enqP] <= x;
+        let next_enqP = nextPtr(enqP);
+        enqP <= next_enqP;
+        empty <= False;
+        if (next_enqP == deqP) begin
+            full <= True;
+        end
+
+    endmethod
+
+    method Action deq() if (!empty);   
+        let next_deqP = nextPtr(deqP);
+        deqP <= next_deqP;
+        full <= False;
+        if (next_deqP == enqP) begin
+            empty <= True;
+        end
+    endmethod
+
+    method t first if (!empty);
+        return data[deqP];
+    endmethod
+
+    method Action clear;
+        enqP <= 0;
+        deqP <= 0;
+        empty <= True;
+        full <= False;
+    endmethod
+
     // TODO: Implement all the methods for this module
 endmodule
 
@@ -39,6 +83,30 @@ endmodule
 module mkMyPipelineFifo( Fifo#(n, t) ) provisos (Bits#(t,tSz));
     // n is size of fifo
     // t is data type of fifo
+
+    method Bool notFull;
+        return True;
+    endmethod
+
+    method Action enq(t x);
+        noAction;
+    endmethod
+
+    method Bool notEmpty;
+        return False;
+    endmethod
+
+    method Action deq;
+        noAction;
+    endmethod
+
+    method t first;
+        return ?;
+    endmethod
+
+    method Action clear;
+        noAction;
+    endmethod
 endmodule
 
 /////////////////////////////
@@ -49,6 +117,30 @@ endmodule
 module mkMyBypassFifo( Fifo#(n, t) ) provisos (Bits#(t,tSz));
     // n is size of fifo
     // t is data type of fifo
+
+    method Bool notFull;
+        return True;
+    endmethod
+
+    method Action enq(t x);
+        noAction;
+    endmethod
+
+    method Bool notEmpty;
+        return False;
+    endmethod
+
+    method Action deq;
+        noAction;
+    endmethod
+
+    method t first;
+        return ?;
+    endmethod
+
+    method Action clear;
+        noAction;
+    endmethod
 endmodule
 
 //////////////////////
@@ -60,5 +152,29 @@ endmodule
 module mkMyCFFifo( Fifo#(n, t) ) provisos (Bits#(t,tSz));
     // n is size of fifo
     // t is data type of fifo
+
+    method Bool notFull;
+        return True;
+    endmethod
+
+    method Action enq(t x);
+        noAction;
+    endmethod
+
+    method Bool notEmpty;
+        return False;
+    endmethod
+
+    method Action deq;
+        noAction;
+    endmethod
+
+    method t first;
+        return ?;
+    endmethod
+
+    method Action clear;
+        noAction;
+    endmethod
 endmodule
 
