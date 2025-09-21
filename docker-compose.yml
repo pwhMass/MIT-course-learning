@@ -2,7 +2,9 @@ version: "3.9" # Compose Specification 的版本
 services:
   connectal: # 服务名称
     image: kazutoiris/connectal:latest # 镜像名称
+    restart: unless-stopped
+    user: root # 以root用户运行容器
     volumes:
-      - .:/data # 映射 /root 目录
+      - .:/data # 映射当前目录到容器/data
     working_dir: /data # 设置工作目录为 /data
     command: tail -f /dev/null  # 添加这行保持容器运行
