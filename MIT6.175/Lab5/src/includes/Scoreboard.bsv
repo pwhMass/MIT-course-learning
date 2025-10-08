@@ -1,6 +1,12 @@
 import SFifo::*;
 import ProcTypes::*;
 
+typedef union tagged {
+    RIndx VReg;
+    CsrIndx Csr;
+    void Invalid;
+} SbType deriving(Eq, Bits, FShow);
+
 interface Scoreboard#(numeric type size);
     method Action insert(Maybe#(RIndx) r);
     method Action remove;
