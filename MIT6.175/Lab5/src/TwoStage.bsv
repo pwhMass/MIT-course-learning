@@ -34,7 +34,7 @@ module mkProc(Proc);
     DMemory     dMem <- mkDMemory;
     CsrFile     csrf <- mkCsrFile;
 
-    Fifo#(1, Dec2Ex) d2e <- mkPipelineFifo;
+    Fifo#(2, Dec2Ex) d2e <- mkCFFifo;
     Reg#(Epoch) epoch <- mkReg(0);
 
 
@@ -75,7 +75,7 @@ module mkProc(Proc);
             Data csrVal = csrf.rd(fromMaybe(?, dInst.csr));
 
             // execute
-            ExecInst eInst = exec(dInst, rVal1, rVal2, element.pc, ?, csrVal);  
+            ExecInst eInst = exec(dInst, rVal1, rVal2, element.pc, element.predPc, csrVal);  
             // The fifth argument above is the predicted pc, to detect if it was mispredicted. 
             // Since there is no branch prediction, this field is sent with a random value
 
@@ -133,14 +133,11 @@ module mkProc(Proc);
                 rf.wr(fromMaybe(?, eInst.dst), eInst.data);
             end
 
-            let nextPc = eInst.brTaken ? eInst.addr : element.pc + 4;
             // update the pc depending on whether the branch is taken or not
-            if(nextPc != element.predPc) begin
-                pc[1] <= nextPc;
+            if(eInst.mispredict) begin
+                pc[1] <= eInst.addr;
                 epoch <= ~epoch;
             end
-
-            
 
             // CSR write for sending data to host & stats
             csrf.wr(eInst.iType == Csrw ? eInst.csr : Invalid, eInst.data);

@@ -35,7 +35,7 @@ module mkProc(Proc);
     DMemory     dMem <- mkDMemory;
     CsrFile     csrf <- mkCsrFile;
 
-    Fifo#(1, Dec2Ex) d2e <- mkPipelineFifo;
+    Fifo#(2, Dec2Ex) d2e <- mkCFFifo;
     Reg#(Epoch) epoch <- mkReg(0);
     Btb#(8) btb <- mkBtb;
 
@@ -53,7 +53,7 @@ module mkProc(Proc);
 
         d2e.enq(Dec2Ex {dInst:decode(inst), pc: pc[0],predPc: ppc,iEpoch: epoch });
 
-        $display("pc: %h inst: (%h) epoch: %b expanded: %s", pc[0], inst, epoch, showInst(inst));
+        $display("TSB pc: %h inst: (%h) epoch: %b expanded: %s", pc[0], inst, epoch, showInst(inst));
         
         
     endrule
@@ -76,7 +76,7 @@ module mkProc(Proc);
             Data csrVal = csrf.rd(fromMaybe(?, dInst.csr));
 
             // execute
-            ExecInst eInst = exec(dInst, rVal1, rVal2, element.pc, ?, csrVal);  
+            ExecInst eInst = exec(dInst, rVal1, rVal2, element.pc, element.predPc, csrVal);  
             // The fifth argument above is the predicted pc, to detect if it was mispredicted. 
             // Since there is no branch prediction, this field is sent with a random value
 
@@ -134,11 +134,10 @@ module mkProc(Proc);
                 rf.wr(fromMaybe(?, eInst.dst), eInst.data);
             end
 
-            let nextPc = eInst.brTaken ? eInst.addr : element.pc + 4;
             // update the pc depending on whether the branch is taken or not
-            if(nextPc != element.predPc) begin
-                btb.update(element.pc, nextPc);
-                pc[1] <= nextPc;
+            if(eInst.mispredict) begin
+                btb.update(element.pc, eInst.addr);
+                pc[1] <= eInst.addr;
                 epoch <= ~epoch;
             end
 
