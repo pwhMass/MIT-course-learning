@@ -63,6 +63,12 @@ module [Module] mkConnectalWrapper#(ConnectalProcIndication ind)(ConnectalWrappe
       DDR3_Client ddrclient = toGPClient( ddr3ReqFifo, ddr3RespFifo );
       mkSimMem(ddrclient);
       Proc m <- mkProc(ddr3ReqFifo, ddr3RespFifo);
+   `elsif WITHOUTCACHE
+      Fifo#(2, DDR3_Req)  ddr3ReqFifo <- mkCFFifo();
+      Fifo#(2, DDR3_Resp) ddr3RespFifo <- mkCFFifo();
+      DDR3_Client ddrclient = toGPClient( ddr3ReqFifo, ddr3RespFifo );
+      mkSimMem(ddrclient);
+      Proc m <- mkProc(ddr3ReqFifo, ddr3RespFifo);
    `else
       Proc m <- mkProc();
    `endif
