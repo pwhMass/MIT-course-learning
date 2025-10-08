@@ -114,8 +114,13 @@ module mkProc(Proc);
         // TODO: 提前丢弃是否能获得更好的性能？
         if(f2dEle.eEpoch == eEpoch && f2dEle.dEpoch == dEpoch) begin
             let dInst = decode(inst);
-            if(dInst.iType == Br)begin
-                let bhtPpc = bht.ppcDP(f2dEle.pc, f2dEle.predPc);
+            if(dInst.iType == Br || dInst.iType == J)begin
+                let bhtPpc = case(dInst.iType)
+                    Br  : return bht.ppcDP(f2dEle.pc, f2dEle.predPc);
+                    J : return f2dEle.pc + fromMaybe(?, dInst.imm);
+                    default : return 0; 
+                endcase;
+
                 if(bhtPpc != f2dEle.predPc) begin
                     // Branch predicted correctly
                     f2dEle.predPc = bhtPpc;
