@@ -7,3 +7,6 @@ sim*
 *.dump
 **/bluesim/**
 **/logs/**
+*.log
+*.bo
+*.logs
