@@ -14,6 +14,7 @@ import CsrFile::*;
 import Vector::*;
 import Fifo::*;
 import Ehr::*;
+import GetPut::*;
 
 (* synthesize *)
 module mkProc(Proc);
@@ -24,6 +25,23 @@ module mkProc(Proc);
     CsrFile     csrf <- mkCsrFile;
 
     Bool memReady = iMem.init.done() && dMem.init.done();
+
+    rule test (!memReady);
+        let e = tagged InitDone;
+        iMem.init.request.put(e);
+        dMem.init.request.put(e);
+    endrule
+
+    Reg#(Bit#(32)) cycleCount <- mkReg(0);
+    rule countCycle (csrf.started && memReady);
+        cycleCount <= cycleCount + 1;
+        // $display("Cycle count: %d ----------------------------------------", cycleCount);
+        if (cycleCount == 5000000) begin
+            $display("Cycle count: %d ----------------------------------------", cycleCount); 
+            $fwrite(stderr, "ERROR: too many cycles\n");
+            $finish; // exit
+        end
+    endrule
 
     rule doProc(csrf.started);
         Data inst = iMem.req(pc);
@@ -69,12 +87,24 @@ module mkProc(Proc);
             // Push new PRV and IE bits into mstatus stack (left shift by 3)
             // Change PC to mtvec
             // Use csrf.startExcep(epc, cause, status) and csrf.getMtvec
+            // csrf.wr(tagged Valid csrMepc, pc);
+            // csrf.wr(tagged Valid csrMcause, excepUnsupport); // excepIllegalInst = 32'h02
+            // csrf.wr(tagged Valid csrMstatus, status);
+            let status = csrf.getMstatus;
+            status = (status << 3) | zeroExtend(3'b110);
+            csrf.startExcep(pc, excepUnsupport, status);
+
+            pc <= csrf.getMtvec;
 		end
 		else if(eInst.iType == ECall) begin
 			$display("System call. Trap");
 			// TODO: system call exception
             // Similar to unsupported instruction exception
             // But use different cause code (excepUserECall = 32'h08)
+            let status = csrf.getMstatus;
+            status = (status << 3) | zeroExtend(3'b110);
+            csrf.startExcep(pc, excepUserECall, status);
+            pc <= csrf.getMtvec;
 		end
 		else if(eInst.iType == ERet) begin
 			$display("ERET");
@@ -82,6 +112,10 @@ module mkProc(Proc);
             // Pop mstatus stack (right shift by 3)
             // Change PC to mepc
             // Use csrf.eret(status) and csrf.getMepc
+            let status = csrf.getMstatus;
+            status = (status >> 3);
+            pc <= csrf.getMepc;
+            csrf.eret(status);
 		end
 		else begin
 			// normal inst
@@ -105,6 +139,7 @@ module mkProc(Proc);
         csrf.start(0); // only 1 core, id = 0
         pc <= startpc;
     endmethod
+
 
     interface iMemInit = iMem.init;
     interface dMemInit = dMem.init;
