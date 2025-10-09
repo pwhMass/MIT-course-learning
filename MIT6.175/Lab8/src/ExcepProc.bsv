@@ -1,3 +1,7 @@
+// OneCycle.bsv
+//
+// This is a one cycle implementation of the RISC-V processor.
+
 import Types::*;
 import ProcTypes::*;
 import MemTypes::*;
@@ -10,9 +14,8 @@ import CsrFile::*;
 import Vector::*;
 import Fifo::*;
 import Ehr::*;
-import GetPut::*;
 
-(*synthesize*)
+(* synthesize *)
 module mkProc(Proc);
     Reg#(Addr)    pc <- mkRegU;
     RFile         rf <- mkRFile;
@@ -20,54 +23,77 @@ module mkProc(Proc);
     DMemory     dMem <- mkDMemory;
     CsrFile     csrf <- mkCsrFile;
 
-    Bool memReady = iMem.init.done && dMem.init.done;
-    rule test (!memReady);
-        let e = tagged InitDone;
-        iMem.init.request.put(e);
-        dMem.init.request.put(e);
-    endrule
+    Bool memReady = iMem.init.done() && dMem.init.done();
 
-    rule doProc (csrf.started);
-        let inst = iMem.req(pc);
-        let dInst = decode(inst, csrf.getMstatus[2:1] == 2'b00);
-        let rVal1 = rf.rd1(fromMaybe(?, dInst.src1));
-        let rVal2 = rf.rd2(fromMaybe(?, dInst.src2));
-        let csrVal = csrf.rd(fromMaybe(?, dInst.csr));
-        let eInst = exec(dInst, rVal1, rVal2, pc, ?, csrVal);
+    rule doProc(csrf.started);
+        Data inst = iMem.req(pc);
 
+        // decode
+        DecodedInst dInst = decode(inst, csrf.getMstatus[2:1] == 2'b00);
+
+        // trace - print the instruction
+        $display("pc: %h inst: (%h) expanded: ", pc, inst, showInst(inst));
+		$display("decoded: ", fshow(dInst));
+
+        // read general purpose register values
+        Data rVal1 = rf.rd1(fromMaybe(?, dInst.src1));
+        Data rVal2 = rf.rd2(fromMaybe(?, dInst.src2));
+
+        // read CSR values (for CSRR & CSRRW inst)
+        Data csrVal = csrf.rd(fromMaybe(?, dInst.csr));
+		$display("regread: rs1 = %h, rs2 = %h, csr = %h", rVal1, rVal2, csrVal);
+
+        // execute
+        ExecInst eInst = exec(dInst, rVal1, rVal2, pc, ?, csrVal);
+		// The fifth argument above is the predicted pc, to detect if it was mispredicted.
+		// Since there is no branch prediction, this field is sent with a random value
+
+        // memory
         if(eInst.iType == Ld) begin
             eInst.data <- dMem.req(MemReq { op:Ld, addr:eInst.addr, data:? });
         end else if(eInst.iType == St) begin
             let d <- dMem.req(MemReq { op: St, addr: eInst.addr, data: eInst.data });
         end
+		$display("executed: ", fshow(eInst));
 
+		// commit
+        // check exception at commit time.
         if(eInst.iType == NoPermission) begin
-            $fwrite(stderr,  "ERROR: Executing NoPermission instruction. Exiting\n");
-            $finish;
-        end else if(eInst.iType == Unsupported) begin
-            $display("Unsupported instruction. Enter Trap");
-            let status = csrf.getMstatus << 3;
-            status[2:0] = 3'b110;
-            csrf.startExcep(pc, 32'h02, status);
-            pc <= csrf.getMtvec;
-        end else if(eInst.iType == ECall) begin
-            $display("System call. Enter Trap");
-            Data status = csrf.getMstatus << 3;
-            status[2:0] = 3'b110;
-            csrf.startExcep(pc, 32'h08, status);
-            pc <= csrf.getMtvec;
-        end else if(eInst.iType == ERet) begin
-            Data status = csrf.getMstatus >> 3;
-            status[11:9] = 3'b001;
-            csrf.eret(status);
-            pc <= csrf.getMepc;
-        end else begin
-            if(isValid(eInst.dst)) begin
-                rf.wr(fromMaybe(?, eInst.dst), eInst.data);
-            end
-            pc <= eInst.brTaken ? eInst.addr : pc+4;
-            csrf.wr(eInst.iType == Csrrw ? eInst.csr : Invalid, eInst.data);
+            $fwrite(stderr, "ERROR: Executing NoPermission instruction. Exiting\n");
+            $finish; // exit
         end
+		else if(eInst.iType == Unsupported) begin
+			$display("Unsupported instruction. Trap");
+			// TODO: unsupported instruction exception
+            // Set mepc and mcause
+            // Push new PRV and IE bits into mstatus stack (left shift by 3)
+            // Change PC to mtvec
+            // Use csrf.startExcep(epc, cause, status) and csrf.getMtvec
+		end
+		else if(eInst.iType == ECall) begin
+			$display("System call. Trap");
+			// TODO: system call exception
+            // Similar to unsupported instruction exception
+            // But use different cause code (excepUserECall = 32'h08)
+		end
+		else if(eInst.iType == ERet) begin
+			$display("ERET");
+			// TODO: return from exception
+            // Pop mstatus stack (right shift by 3)
+            // Change PC to mepc
+            // Use csrf.eret(status) and csrf.getMepc
+		end
+		else begin
+			// normal inst
+			// write back to reg file
+			if(isValid(eInst.dst)) begin
+				rf.wr(fromMaybe(?, eInst.dst), eInst.data);
+			end
+			// update the pc depending on whether the branch is taken or not
+			pc <= eInst.brTaken ? eInst.addr : pc + 4;
+			// CSRRW write CSR (including sending data to host & stats, modifying states)
+			csrf.wr(eInst.iType == Csrrw ? eInst.csr : Invalid, eInst.data);
+		end
     endrule
 
     method ActionValue#(CpuToHostData) cpuToHost;
@@ -75,10 +101,8 @@ module mkProc(Proc);
         return ret;
     endmethod
 
-    method Action hostToCpu(Bit#(32) startpc) if (!csrf.started && memReady);
-        csrf.start(0);
-        $display("Start at pc %h\n", startpc);
-	    $fflush(stdout);
+    method Action hostToCpu(Bit#(32) startpc) if ( !csrf.started && memReady );
+        csrf.start(0); // only 1 core, id = 0
         pc <= startpc;
     endmethod
 
