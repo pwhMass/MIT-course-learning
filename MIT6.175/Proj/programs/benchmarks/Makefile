@@ -35,13 +35,13 @@ HOST_OPTS := -std=gnu99 -DPREALLOCATE=0 -DHOST_DEBUG=1 -I$(commondir)
 HOST_COMP := gcc $(HOST_OPTS)
 
 #RISCV_TOOL_DIR := /mit/6.175/rv32-gcc/bin
-RISCV_TOOL_DIR := /home/adam/riscv32-special-a/bin
+RISCV_TOOL_DIR := /home/peng/projects/riscv/bin
 
 RISCV_PREFIX := $(RISCV_TOOL_DIR)/riscv32-unknown-elf
 # gcc
 RISCV_GCC := $(RISCV_PREFIX)-gcc
 #RISCV_GCC_OPTS := -static -Wa,-march=RVI -std=gnu99 -O2 -ffast-math -fno-common -fno-builtin-printf
-RISCV_GCC_OPTS := -static -Wa,-march=rv32ia -std=gnu99 -O2 -ffast-math -fno-common -fno-builtin-printf
+RISCV_GCC_OPTS := -static -march=rv32ia_zicsr -mabi=ilp32 -std=gnu99 -O2 -ffast-math -fno-common -fno-builtin-printf
 
 incs := -I$(bmarkdir)/../env -I$(bmarkdir)/common
 bmarks_defs := -DPREALLOCATE=0 -DHOST_DEBUG=0
@@ -51,7 +51,8 @@ RISCV_LINK_OPTS := -nostdlib -nostartfiles -ffast-math -lc -lgcc
 # objdump
 RISCV_OBJDUMP := $(RISCV_PREFIX)-objdump --disassemble --disassemble-zeroes --section=.text --section=.text.startup --section=.data
 # convert to VMH: 64KB memory
-RISCV_ELF2HEX := $(RISCV_TOOL_DIR)/elf2hex
+ELF2HEX_TOOL_DIR := /home/peng/projects/riscv/bin
+RISCV_ELF2HEX := $(ELF2HEX_TOOL_DIR)/elf2hex
 VMH_WIDTH := 8
 VMH_DEPTH := 32768
 

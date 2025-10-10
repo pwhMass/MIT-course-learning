@@ -15,7 +15,6 @@ default: all
 # Sources
 #--------------------------------------------------------------------
 rv32ui_tests = \
-	simple \
 	add addi \
 	and andi \
 	auipc \
@@ -39,13 +38,13 @@ rv32ui_tests = \
 #--------------------------------------------------------------------
 
 #RISCV_TOOL_DIR := /mit/6.175/rv32-gcc/bin
-RISCV_TOOL_DIR := /home/adam/riscv32-special-a/bin
+RISCV_TOOL_DIR := /home/peng/projects/riscv/bin
 
 RISCV_PREFIX := $(RISCV_TOOL_DIR)/riscv32-unknown-elf
 # gcc
 RISCV_GCC := $(RISCV_PREFIX)-gcc
 #RISCV_GCC_OPTS := -m32 -static -fvisibility=hidden -nostdlib -nostartfiles -Wa,-march=RVI
-RISCV_GCC_OPTS := -static -fvisibility=hidden -nostdlib -nostartfiles -Wa,-march=rv32ia
+RISCV_GCC_OPTS := -static -fvisibility=hidden -nostdlib -nostartfiles -Wa,-march=rv32ia_zicsr -mabi=ilp32
 
 incs := -I$(asmdir)/../env -I$(asmdir)/macros
 # link
@@ -53,7 +52,8 @@ RISCV_LINK_OPTS := -T$(asmdir)/link.ld
 # objdump
 RISCV_OBJDUMP := $(RISCV_PREFIX)-objdump --disassemble --disassemble-zeroes --section=.text --section=.text.startup --section=.data
 # convert to VMH: 16KB memory
-RISCV_ELF2HEX := $(RISCV_TOOL_DIR)/elf2hex
+ELF2HEX_TOOL_DIR := /home/peng/projects/riscv/bin
+RISCV_ELF2HEX := $(ELF2HEX_TOOL_DIR)/elf2hex
 VMH_WIDTH := 8
 VMH_DEPTH := 16384
 
