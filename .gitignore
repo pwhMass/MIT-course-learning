@@ -12,3 +12,4 @@ sim*
 *.logs
 .spec-workflow/*
 temp
+*.ba

@@ -3,51 +3,61 @@ import ProcTypes::*;
 import RegFile::*;
 import Vector::*;
 
-
-// Counter functions
-function Bit#(2) updateCounter(Bool dir, Bit#(2) counter);
-  return dir?saturatingInc(counter)
-            :saturatingDec(counter);
-endfunction
-
-function Bit#(2) saturatingInc(Bit#(2) counter);
-  let plusOne = counter + 1;
-  return (plusOne == 0)?counter:plusOne;
-endfunction
-
-function Bit#(2) saturatingDec(Bit#(2) counter);
-  return (counter == 0)?0:counter-1;
-endfunction
-
-// indexSize is the number of bits in the index
-interface Bht#(numeric type indexSize);
-    method Bool predict(Addr addr);
-    method Action train(Addr addr, Bool taken);
+interface DirectionPred#(numeric type bhtIndex);
+    method Addr ppcDP(Addr pc, Addr targetPC);
+    method Action update(Addr pc, Bool taken);
 endinterface
 
 
-module mkBht( Bht#(indexSize) ) provisos( Add#(indexSize,a__,32) );
-    
-    // Direction predictor state
-    //RegFile#(Bit#(indexSize),Bit#(2)) cntArray <- mkRegFileFull();
-    Vector#(TExp#(indexSize), Reg#(Bit#(2))) counterArray <- replicateM(mkReg(1));
+module mkBHT(DirectionPred#(bhtIndex)) provisos( Add#(bhtIndex,a__,32), NumAlias#(TExp#(bhtIndex), bhtEntries) );
 
-    method Bool predict(Addr addr);
-        
-        Bit#(indexSize) index = truncate(addr >> 2);
-        Bit#(2) counter = counterArray[index];
-        Bit#(1) first = truncate(counter >> 1);
-    
-        Bool taken = (first == 1);
+    //2^index Bht entries initialized to !weaklyTaken
+    Vector# (bhtEntries, Reg#(Bit#(2))) bhtArr <-replicateM(mkReg(2'b01));
 
-        return taken;
+    //max and min allowable vals for dp Bits
+    Bit#(2) maxDp = 2'b11; Bit#(2) minDp = 2'b00;
+
+    //get rid of last two bits of PC and truncate it down to bht index size
+    function Bit#(bhtIndex) getBhtIndex(Addr pc)  = truncate(pc >> 2) ;
+
+    //if taken return targetPC. Otherwise return pc+4
+    function Addr computeTarget(Addr pc, Addr targetPC, Bool taken) = taken ? targetPC : pc + 4;
+
+    //if strongly/weakly taken, return True. Else False
+    function Bool extractDir(Bit#(2) dpBits);
+
+        Bool stronglyTaken = (2'b11 == dpBits);
+        Bool weaklyTaken = (2'b10 == dpBits);
+        return (stronglyTaken || weaklyTaken);
+
+    endfunction
+
+    //get the dPbits at the specified index
+    function Bit#(2) getBhtEntry(Addr pc) = bhtArr[getBhtIndex(pc)];
+
+    //if taken +1, if not -1 : flipped comparisions b/c of overflow
+    function Bit#(2) newDpBits(Bit#(2) dpBits, Bool taken);
+
+        if (taken) begin
+            let newDp = dpBits + 1;
+            return newDp == minDp ? maxDp : newDp;
+        end
+        else begin
+            let newDp = dpBits - 1;
+            return newDp == maxDp ? minDp : newDp;
+        end
+    endfunction
+
+
+    //compute the ppc according to the bht array
+    method Addr ppcDP(Addr pc, Addr targetPC);
+        let direction = extractDir(getBhtEntry(pc));
+        return computeTarget(pc, targetPC, direction);
     endmethod
 
-    method Action train(Addr addr, Bool taken);
-       
-        Bit#(indexSize) index = truncate(addr >> 2);
-        Bit#(2) counter = counterArray[index];
-        
-        counterArray[index] <= updateCounter(taken, counter);
+    method Action update(Addr pc, Bool taken);
+        let index = getBhtIndex(pc);
+        let dpBits = getBhtEntry(pc);
+        bhtArr[index] <=newDpBits(dpBits, taken);
     endmethod
 endmodule
