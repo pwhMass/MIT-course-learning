@@ -96,6 +96,7 @@ module mkDCache#(CoreID id)(
             // $display("Warning: DCache receive fill response with no data!\n");
         end
         if(missReq.op == St) begin
+            refDMem.commit(missReq,tagged Valid newCacheLine,tagged Invalid);
             newCacheLine[wordSelect] = missReq.data;
         end
         dataArray[index] <= newCacheLine;
@@ -108,6 +109,7 @@ module mkDCache#(CoreID id)(
         let wordSelect = getWordSelect(missReq.addr);
 
         if(missReq.op == Ld) begin 
+            refDMem.commit(missReq,tagged Valid dataArray[index],tagged Valid dataArray[index][wordSelect]);
             hitQ.enq(dataArray[index][wordSelect]); 
         end
         mshr <= Ready;
@@ -130,7 +132,7 @@ module mkDCache#(CoreID id)(
             // deal with downgrade request
             state[index] <= req.state;
             // TODO: 是否应该增加 clear 来满足与 req 互斥的情况？
-            dataArray[index] <= replicate(0); // clear data
+            // dataArray[index] <= replicate(0); // clear data
 
             // send downgrade request to PPP
             let data = state[index] == M ? tagged Valid dataArray[index] : tagged Invalid;
@@ -144,6 +146,7 @@ module mkDCache#(CoreID id)(
     endrule 
 
     method Action req(MemReq r) if(mshr == Ready);
+        refDMem.issue(r);
 
         let index = getIndex(r.addr);
         let tag = getTag(r.addr);
@@ -155,12 +158,19 @@ module mkDCache#(CoreID id)(
         if(hit) begin
             // cache hit
             let cLine = dataArray[index];
-            if(r.op == Ld) hitQ.enq(dataArray[index][wordSelect]);
+            if(r.op == Ld) begin
+                refDMem.commit(r,tagged Valid dataArray[index],tagged Valid dataArray[index][wordSelect]);
+                hitQ.enq(dataArray[index][wordSelect]);
+            end
             else  begin// it is store
-                if (state[index] == M)
+                if (state[index] == M) begin
+                    refDMem.commit(r,tagged Valid dataArray[index],tagged Invalid);
                     dataArray[index][wordSelect] <= r.data;
-                else 
-                    begin missReq <= r; mshr <= SendFillReq; end
+                end
+                else begin
+                    missReq <= r;
+                    mshr <= SendFillReq;
+                end
             end
         end 
         else begin
