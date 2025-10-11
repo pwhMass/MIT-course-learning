@@ -1,4 +1,4 @@
-CONNECTALDIR ?= /home/adam/connectal
+CONNECTALDIR ?= /opt/connectal
 S2H_INTERFACES = \
 	ConnectalProcRequest:ConnectalWrapper.connectProc\
 	ConnectalMemoryInitialization:ConnectalWrapper.initProc
@@ -27,13 +27,13 @@ export SOFTWARE_SOCKET_NAME
 
 
 CONNECTALFLAGS += -D CORE_NUM=$(CORENUM)
-CONNECTALFLAGS += -D $(CORE)
-CONNECTALFLAGS += -D $(CACHE)
+CONNECTALFLAGS += -D $(VPROC)
+#CONNECTALFLAGS += -D $(CACHE)
 
 CONNECTALFLAGS += --bscflags " -I $(C_LIB_DIR)"
 CONNECTALFLAGS += --bscflags " -L $(C_LIB_DIR)"
 
-CONNECTALFLAGS += --bscflags " -D CORE_NUM=$(CORENUM) -D $(CORE) -D $(CACHE) -steps-max-intervals 50 +RTS -K256M -RTS"
+CONNECTALFLAGS += --bscflags " -D CORE_NUM=$(CORENUM) -D $(VPROC) -steps-max-intervals 50 +RTS -K256M -RTS"
 CONNECTALFLAGS += --bscflags " -show-schedule"
 CONNECTALFLAGS += --cxxflags="-g -std=gnu++11"
 
