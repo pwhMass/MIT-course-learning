@@ -22,19 +22,55 @@ module mkDCache#(CoreID id)(
     Vector#(CacheRows, Reg#(CacheTag)) tagArray <- replicateM(mkRegU);
     Vector#(CacheRows, Reg#(CacheLine)) dataArray <- replicateM(mkRegU);
 
-    Fifo#(3,MemResp) hitQ <- mkCFFifo;
+    Fifo#(2, Data) hitQ <- mkBypassFifo;
+    Fifo#(1, MemReq) reqQ <- mkBypassFifo;
 
     Reg#(CacheStatus) mshr <- mkReg(Ready);
     Reg#(MemReq) missReq <- mkRegU;
 
+    //TODO 这样的优先级顺序对吗？
+    (* descending_urgency = "dng, startReq" *)
+    rule startReq(mshr == Ready);
+        // $display("DCache %0d start processing new request", id);
+        MemReq r = reqQ.first;
+        reqQ.deq;
 
-    //for test
-    // rule logState;
-    //     $display("DCache %0d state: mshr=%0d", id, mshr);
-    // endrule
+        let index = getIndex(r.addr);
+        let tag = getTag(r.addr);
+        let wordSelect = getWordSelect(r.addr);
+
+
+        let hit = state[index] != I && tagArray[index] == tag;
+
+        if(hit) begin
+            // cache hit
+            
+            if(r.op == Ld) begin
+                refDMem.commit(r,tagged Valid dataArray[index],tagged Valid dataArray[index][wordSelect]);
+                hitQ.enq(dataArray[index][wordSelect]);
+            end
+            else  begin// it is store
+                if (state[index] == M) begin
+                    let tempLine = dataArray[index];
+                    refDMem.commit(r,tagged Valid tempLine,tagged Invalid);
+                    let updatedLine = update(tempLine, wordSelect, r.data);
+                    dataArray[index] <= updatedLine;
+                end
+                else begin
+                    missReq <= r;
+                    mshr <= SendFillReq;
+                end
+            end
+        end 
+        else begin
+            // cache miss
+            // TODO 是否可以判定是否为 I 来直接跳转到 SendFillReq
+            missReq <= r; mshr <= StartMiss;
+        end
+
+    endrule
+
     
-    // TODO 如何指定method 和 rule之间的优先级？
-    // (* descending_urgency = "req, dng" *)
 
     rule startMiss(mshr == StartMiss);
         let index = getIndex(missReq.addr);
@@ -145,40 +181,11 @@ module mkDCache#(CoreID id)(
         fromMem.deq;
     endrule 
 
+
     method Action req(MemReq r) if(mshr == Ready);
         refDMem.issue(r);
 
-        let index = getIndex(r.addr);
-        let tag = getTag(r.addr);
-        let wordSelect = getWordSelect(r.addr);
-
-
-        let hit = state[index] != I && tagArray[index] == tag;
-
-        if(hit) begin
-            // cache hit
-            let cLine = dataArray[index];
-            if(r.op == Ld) begin
-                refDMem.commit(r,tagged Valid dataArray[index],tagged Valid dataArray[index][wordSelect]);
-                hitQ.enq(dataArray[index][wordSelect]);
-            end
-            else  begin// it is store
-                if (state[index] == M) begin
-                    refDMem.commit(r,tagged Valid dataArray[index],tagged Invalid);
-                    dataArray[index][wordSelect] <= r.data;
-                end
-                else begin
-                    missReq <= r;
-                    mshr <= SendFillReq;
-                end
-            end
-        end 
-        else begin
-            // cache miss
-            // TODO 是否可以判定是否为 I 来直接跳转到 SendFillReq
-            missReq <= r; mshr <= StartMiss;
-        end
-
+        reqQ.enq(r);
     endmethod
 
 
