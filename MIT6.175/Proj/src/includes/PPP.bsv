@@ -22,12 +22,12 @@ module mkPPP(MessageGet c2m, MessagePut m2c, WideMem mem, Empty ifc);
 
     Reg#(PRState) pRState <- mkReg(Idle);
 
-    // 用于解决rule冲突
-    RWire#(void) sendS2MResp <- mkRWire;
+    // 用于解决rule冲突 FAIL: 为什么这样就不行？
+    Wire#(void) sendS2MResp <- mkDWire(?);
 
     (* descending_urgency = "parentRespSend,parentRespSendS2MResp" *)
     rule parentRespSendS2MResp(c2m.first matches tagged Req .req);
-        if(isValid(sendS2MResp.wget)) begin
+        $display("PPP directly respond to core", sendS2MResp._read());
             let reqIndex = getIndex(req.addr);
 
             // update state
@@ -35,7 +35,7 @@ module mkPPP(MessageGet c2m, MessagePut m2c, WideMem mem, Empty ifc);
             // deal req
             c2m.deq;
             m2c.enq_resp(CacheMemResp{child: req.child, addr: req.addr, state: req.state, data: tagged Invalid});
-        end
+        
     endrule
 
     // 为了正确运行
@@ -71,8 +71,8 @@ module mkPPP(MessageGet c2m, MessagePut m2c, WideMem mem, Empty ifc);
 
         if(comp) begin
             if(cState == S && reqTag == childTag[req.child][reqIndex]) begin
-                $display("PPP directly respond to core %0d", req.child);
-                sendS2MResp.wset(?);   
+                $display("PPP send write", req.child);
+                sendS2MResp._write(?);
 
                 // update state
                 // childState[req.child][reqIndex] <= req.state;
